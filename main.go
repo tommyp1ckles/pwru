@@ -22,6 +22,7 @@ import (
 
 	"github.com/cilium/pwru/internal/libpcap"
 	"github.com/cilium/pwru/internal/pwru"
+	"github.com/cilium/pwru/tui"
 )
 
 func main() {
@@ -305,11 +306,16 @@ func main() {
 			log.Printf("Printed %d events, exiting program..\n", flags.OutputLimitLines)
 		}
 	}()
-
-	var event pwru.Event
+	app, root := tui.App(addr2name)
+	go func() {
+		if err := app.Run(); err != nil {
+			panic(err)
+		}
+	}()
 	events := coll.Maps["events"]
 	runForever := flags.OutputLimitLines == 0
 	for i := flags.OutputLimitLines; i > 0 || runForever; i-- {
+		var event pwru.Event
 		for {
 			if err := events.LookupAndDelete(nil, &event); err == nil {
 				break
@@ -322,11 +328,13 @@ func main() {
 			}
 		}
 
-		if flags.OutputJson {
+		tui.Insert(root, &event, addr2name)
+		app.Draw()
+		/*if flags.OutputJson {
 			output.PrintJson(&event)
 		} else {
 			output.Print(&event)
-		}
+		}*/
 
 		select {
 		case <-ctx.Done():

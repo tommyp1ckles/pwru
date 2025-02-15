@@ -19,13 +19,20 @@ require (
 require (
 	github.com/VividCortex/ewma v1.2.0 // indirect
 	github.com/fatih/color v1.18.0 // indirect
+	github.com/gdamore/encoding v1.0.0 // indirect
+	github.com/gdamore/tcell/v2 v2.7.1 // indirect
 	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/josharian/native v1.1.0 // indirect
+	github.com/lucasb-eyer/go-colorful v1.2.0 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-runewidth v0.0.16 // indirect
 	github.com/mdlayher/netlink v1.7.2 // indirect
 	github.com/mdlayher/socket v0.4.1 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
-	github.com/rivo/uniseg v0.2.0 // indirect
+	github.com/ratatui/ratatui v0.29.0 // indirect
+	github.com/rivo/tview v0.0.0-20241227133733-17b7edb88c57 // indirect
+	github.com/rivo/uniseg v0.4.7 // indirect
+	golang.org/x/term v0.29.0 // indirect
+	golang.org/x/text v0.22.0 // indirect
 )
