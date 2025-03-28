@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"net"
 	"strconv"
-	"strings"
 	"syscall"
 	"time"
 
 	"github.com/cilium/pwru/internal/byteorder"
 	"github.com/cilium/pwru/internal/pwru"
+	"github.com/cilium/pwru/tui/draw"
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
@@ -114,44 +114,9 @@ func App(addr2Name pwru.Addr2Name) (*tview.Application, *tview.TreeNode) {
 	tree.SetRoot(root).
 		SetCurrentNode(root)
 
-	maxLen := 100
-	pkt := `
-┌─────────────────────────────────────────────────────────────────────────┐
-│ SKB                                                                     │
-├─────────────────────────────────────────────────────────────────────────┤
-│ sskb:		%s%s│
-│ mark:		%s%s│
-│ ifindex:	%s%s│
-│ func:		%s%s│
-│ ┌─────────────────────────────────────────────────────────────────────┐ │
-│ │ TUPLE                                                               │ │
-│ ├─────────────────────────────────────────────────────────────────────┤ │
-│ │ saddr: 	%s%s│ │
-│ │ daddr: 	%s%s│ │
-`
-	/*
-	   	tunnel := `
-	   │ ┌─────────────────────────────────────────────────────────────────────┐ │
-	   │ │ TUNNEL                                                              │ │
-	   │ ├─────────────────────────────────────────────────────────────────────┤ │
-	   │ │ saddr: 	%s%s│ │
-	   │ │ daddr: 	%s%s│ │
-	   `
-	*/
-	foot := "│ └─────────────────────────────────────────────────────────────────────┘ │\n" + 
-		"└─────────────────────────────────────────────────────────────────────────┘`"
-	/*
-	   │ │ ┌─────────────────────────────────────────────────────────────────┐ │ │
-	   │ │ │ VXLAN                                                           │ │ │
-	   │ │ ├─────────────────────────────────────────────────────────────────┤ │ │
-	   │ │ │ saddr: 	%s                                                    │	│ │
-	   │ │ │ saddr: 	%s                                                    │	│ │
-	   │ │ │ saddr: 	%s                                                    │	│ │
-	   │ │ │ saddr: 	%s                                                    │	│ │
-	*/
 	pktView := tview.NewTextView().SetText("")
 	// Enable selection and set a selection handler
-	tree.SetSelectedFunc(func(node *tview.TreeNode) {
+	tree.SetChangedFunc(func(node *tview.TreeNode) {
 		if node == nil {
 			return
 		}
@@ -164,41 +129,101 @@ func App(addr2Name pwru.Addr2Name) (*tview.Application, *tview.TreeNode) {
 				return
 			}
 			skbAddr := fmt.Sprintf("0x%016x", e.SkbAddr)
+			e.Meta.Mark = 0xffff
 			mark := fmt.Sprintf("0x%08x", e.Meta.Mark)
+			masks := decodeMark(uint16(e.Meta.Mark))
 			ifindex := fmt.Sprintf("%d", e.Meta.Ifindex)
 			fn := addr2Name.Addr2NameMap[e.Addr].Name()
 
-			padr := func(s string, nesting int) string {
+			/*padr := func(s string, nesting int) string {
 				nestOff := nesting * 2
 				return strings.Repeat(" ", maxLen-(38+len(s))-nestOff)
-			}
+			}*/
 
 			portStr := func(n uint16) string {
 				return strconv.Itoa(int(byteorder.NetworkToHost16(n)))
 			}
 			saddr := addrToStr(e.Tuple.L3Proto, e.Tuple.Saddr) + ":" + portStr(e.Tuple.Sport)
 			daddr := addrToStr(e.Tuple.L3Proto, e.Tuple.Daddr) + ":" + portStr(e.Tuple.Dport)
-			txt := fmt.Sprintf(pkt,
-				skbAddr, strings.Repeat(" ", maxLen-(38+len(skbAddr))),
-				mark, strings.Repeat(" ", maxLen-(38+len(mark))),
-				//pwru.GetTupleData(e, false),
-				ifindex, padr(ifindex, 0),
-				fn, padr(fn, 0),
 
-				saddr, padr(saddr, 1),
-				daddr, padr(daddr, 1),
-			)
-			pktView.SetText(txt + foot)
-		} else {
-			node.SetExpanded(!node.IsExpanded()) // Toggle expansion
+			w := 70
+			txt := draw.Header(w) + "\n"
+			txt += draw.Line(w, " SKB:") + "\n"
+			// todo line break
+			txt += draw.Line(w, " skb_addr:"+skbAddr) + "\n"
+			txt += draw.Line(w, " mark:"+mark) + "\n"
+			for _, mask := range masks {
+				txt += draw.Line(w, " *"+mask) + "\n"
+			}
+			txt += draw.Line(w, " ifindex:"+ifindex) + "\n"
+			txt += draw.Line(w, " func_name:"+fn) + "\n"
+			txt += draw.Line(w, " saddr:"+saddr) + "\n"
+			txt += draw.Line(w, " daddr:"+daddr) + "\n"
+			txt += draw.Footer(w)
+
+			pktView.SetText(txt)
 		}
 	})
+	tree.SetSelectedFunc(func(node *tview.TreeNode) {
+		if node == nil {
+			return
+		}
+		if node.GetText() == "traces" {
+			return
+		}
+		if len(node.GetChildren()) > 0 {
+			node.SetExpanded(!node.IsExpanded()) // Toggle expansion
+		}
 
+	})
+
+	// 2,3
 	flex := tview.NewFlex().
-		AddItem(tree, 0, 2, true).
+		AddItem(tree, 70, 2, true).
 		AddItem(pktView, 0, 3, false)
 
 	return app.SetRoot(flex, true).SetFocus(flex), root
+}
+
+var (
+	MARK_MAGIC_HOST_MASK     uint16 = 0x0F00
+	MARK_MAGIC_PROXY_INGRESS uint16 = 0x0A00
+	MARK_MAGIC_PROXY_EGRESS  uint16 = 0x0B00
+	MARK_MAGIC_HOST          uint16 = 0x0C00
+	MARK_MAGIC_DECRYPT       uint16 = 0x0D00
+	MARK_MAGIC_ENCRYPT       uint16 = 0x0E00
+	MARK_MAGIC_IDENTITY      uint16 = 0x0F00
+	MARK_MAGIC_TO_PROXY      uint16 = 0x0200
+)
+
+func decodeMark(m uint16) []string {
+	pre := "(Cilium) MARK_MAGIC"
+	hasMark := func(mark uint16) bool {
+		return mark&MARK_MAGIC_HOST_MASK&m == mark
+	}
+	marks := []string{}
+	if hasMark(MARK_MAGIC_PROXY_INGRESS) {
+		marks = append(marks, pre+"_PROXY_INGRESS")
+	}
+	if hasMark(MARK_MAGIC_PROXY_EGRESS) {
+		marks = append(marks, pre+"_PROXY_EGRESS")
+	}
+	if hasMark(MARK_MAGIC_HOST) {
+		marks = append(marks, pre+"_MAGIC_HOST")
+	}
+	if hasMark(uint16(MARK_MAGIC_DECRYPT)) {
+		marks = append(marks, pre+"_MAGIC_DECRYPT")
+	}
+	if hasMark(uint16(MARK_MAGIC_ENCRYPT)) {
+		marks = append(marks, pre+"_MAGIC_ENCRYPT")
+	}
+	if hasMark(uint16(MARK_MAGIC_IDENTITY)) {
+		marks = append(marks, pre+"_MAGIC_IDENTITY")
+	}
+	if hasMark(uint16(MARK_MAGIC_TO_PROXY)) {
+		marks = append(marks, pre+"_MAGIC_TO_PROXY")
+	}
+	return marks
 }
 
 type traceTree struct {
@@ -209,8 +234,8 @@ func revTuple(tpl pwru.Tuple) pwru.Tuple {
 	out := tpl
 	copy(out.Daddr[:], tpl.Saddr[:])
 	copy(out.Saddr[:], tpl.Daddr[:])
-	out.Sport = tpl.Sport
-	out.Dport = tpl.Dport
+	out.Sport = tpl.Dport
+	out.Dport = tpl.Sport
 	return out
 }
 
