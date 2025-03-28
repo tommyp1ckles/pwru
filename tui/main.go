@@ -123,6 +123,10 @@ func App(addr2Name pwru.Addr2Name) (*tview.Application, *tview.TreeNode) {
 		if node.GetText() == "traces" {
 			return
 		}
+		// TODO: On the non leaf now, lets do a view thats like:
+		// (cilium_vxlan) eth1(10 fn-calls)Mark:(In: 0xffff, Out: 0x1234)
+		// (cilium_host) eth2(10 fn-calls)Mark:(In: 0xffff, Out: 0x1234)
+		// eth0(10 fn-calls)Mark:(In: 0xffff, Out: 0x1234)
 		if len(node.GetChildren()) == 0 {
 			e, ok := node.GetReference().(*pwru.Event)
 			if !ok {
@@ -246,6 +250,7 @@ func Insert(root *tview.TreeNode, e *pwru.Event, addr2Name pwru.Addr2Name) {
 	var pairRef *pwru.Event
 	// Pair node folds on 4-tuple (todo: make this for both directions).
 	var pairNode *tview.TreeNode
+	dir := "→"
 	for _, tpn := range tuplePairs {
 		obj := tpn.GetReference()
 		if obj == nil {
@@ -262,7 +267,12 @@ func Insert(root *tview.TreeNode, e *pwru.Event, addr2Name pwru.Addr2Name) {
 				bytes.Compare(a.Daddr[:4], b.Daddr[:4]) == 0 &&
 				a.Sport == b.Sport && a.Dport == b.Dport
 		}
-		if equals(tp.Tuple, e.Tuple) || equals(revTuple(tp.Tuple), e.Tuple) {
+		eq := equals(tp.Tuple, e.Tuple)
+		revEq := equals(revTuple(tp.Tuple), e.Tuple)
+		if revEq {
+			dir = "←"
+		}
+		if eq || revEq {
 			pairRef = tp
 			pairNode = tpn
 			break
@@ -279,7 +289,7 @@ func Insert(root *tview.TreeNode, e *pwru.Event, addr2Name pwru.Addr2Name) {
 
 	ts := time.Now().Format(time.StampNano)
 	fn := addr2Name.Addr2NameMap[e.Addr].Name()
-	flowNode := tview.NewTreeNode(fmt.Sprintf("%s %s", fn, ts)).SetColor(tcell.ColorPink)
+	flowNode := tview.NewTreeNode(fmt.Sprintf(dir+"%s %s", fn, ts)).SetColor(tcell.ColorPink)
 	flowNode.SetReference(e)
 
 	pairNode.AddChild(flowNode)
