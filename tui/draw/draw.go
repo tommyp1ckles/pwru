@@ -19,6 +19,10 @@ func Line(w int, txt string) string {
 	return b + txt + repeatSafe(" ", w-2-tw) + b
 }
 
+func Break(w int) string {
+	return "├" + repeatSafe("─", w-2) + "┤"
+}
+
 func Header(w int) string {
 	return "┌" + repeatSafe("─", w-2) + "┐"
 }

@@ -6,11 +6,11 @@ import (
 	"net"
 	"strconv"
 	"syscall"
-	"time"
 
 	"github.com/cilium/pwru/internal/byteorder"
 	"github.com/cilium/pwru/internal/pwru"
 	"github.com/cilium/pwru/tui/draw"
+	"github.com/fatih/color"
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
@@ -25,90 +25,16 @@ func addrToStr(proto uint16, addr [16]byte) string {
 		return ""
 	}
 }
+
+var lastEvent *pwru.Event
+
 func App(addr2Name pwru.Addr2Name) (*tview.Application, *tview.TreeNode) {
 	app := tview.NewApplication()
-	/*flex := tview.NewFlex().
-	AddItem(tview.NewBox().SetBorder(true).SetTitle("Left (1/2 x width of Top)"), 0, 1, false).
-	AddItem(tview.NewFlex().SetDirection(tview.FlexRow).
-		AddItem(tview.NewBox().SetBorder(true).SetTitle("Top"), 0, 1, false).
-		AddItem(tview.NewBox().SetBorder(true).SetTitle("Middle (3 x height of Top)"), 0, 3, false).
-		AddItem(tview.NewBox().SetBorder(true).SetTitle("Bottom (5 rows)"), 5, 1, false), 0, 2, false).
-	AddItem(tview.NewBox().SetBorder(true).SetTitle("Right (20 cols)"), 20, 1, false)*/
-
 	tree := tview.NewTreeView()
 
 	// Create the root node
 	root := tview.NewTreeNode("traces").
 		SetColor(tcell.ColorBlue)
-
-	// Ok, lets aggregate on tuple (bi directional).
-	//
-	// Goals:
-	//	* Make it easy to trace through particular connections, without too much pcap/grep filtering.
-	//	* Provide context where possible.
-	//
-	// i.e. 1.2.3.4:2222 <-> 1.1.1.1:1111
-	// 	* Under this we group by contiguous skb address
-	// 1.2.3.4:2222 <-> 1.1.1.1:1111:
-	//	* 0xdeadbeefdeadbeef
-	//		* (0) eth0 (container x outer)
-	//		* (1) cilium_host
-	//		* (2) 2025-01-1...
-	//	* 0xffffffffffffffff
-	//		* (0) 2025-01-1...
-	//
-	// These leaves select the pkt view:
-	// skb:		0xdeadbeef00000000
-	// tuple:	1.2.3.4:2222 <-> 1.1.1.1:1111:
-	// mark:	0xffff # we can try to do cilium integration here:
-	//		[0 1 0 0 0 0 0 0]
-	//		  |
-	// 		  MARK_IDENTITY
-	// device: 	eth0:123 # note: would be nice to associate these better.
-	//	* veth-pair: eth0:123 -> netns(1234):eth777
-	//
-	// Finally, we also take into account tunnel tuples for this.
-	//
-	// So top level we see a tuple, this is deep traced under both
-
-	// Add child nodes
-	/*child1 := tview.NewTreeNode("10.0.0.0:30124 ↔ 10.123.111.1:1234 ").
-		SetColor(tcell.ColorGreen)
-
-	skb1 := tview.NewTreeNode("0xdeadbeefdeadbeef")
-	sample1 := tview.NewTreeNode("(0) eth0")
-	sample2 := tview.NewTreeNode("(1) eth0")
-	skb1.AddChild(sample1)
-	skb1.AddChild(sample2)
-	child1.AddChild(skb1)
-	child3 := tview.NewTreeNode("10.123.111.1:1234 ↔ 10.0.0.0:30124 ").
-		SetColor(tcell.ColorGreen)*/
-
-	// Attach children to the root
-	//root.AddChild(child1).
-	//AddChild(child3)
-
-	/*Insert(root, &pwru.Event{
-		Addr: 1,
-		Tuple: pwru.Tuple{
-			L3Proto: syscall.ETH_P_IP,
-			Saddr:   [16]byte{10, 0, 0, 1},
-			Daddr:   [16]byte{10, 0, 0, 2},
-			Sport:   30001,
-			Dport:   1234,
-		},
-	})
-
-	Insert(root, &pwru.Event{
-		Addr: 1,
-		Tuple: pwru.Tuple{
-			L3Proto: syscall.ETH_P_IP,
-			Saddr:   [16]byte{10, 0, 0, 1},
-			Daddr:   [16]byte{10, 0, 0, 2},
-			Sport:   30001,
-			Dport:   1234,
-		},
-	})*/
 
 	// Set the root node in the tree
 	tree.SetRoot(root).
@@ -133,16 +59,13 @@ func App(addr2Name pwru.Addr2Name) (*tview.Application, *tview.TreeNode) {
 				return
 			}
 			skbAddr := fmt.Sprintf("0x%016x", e.SkbAddr)
-			e.Meta.Mark = 0xffff
 			mark := fmt.Sprintf("0x%08x", e.Meta.Mark)
 			masks := decodeMark(uint16(e.Meta.Mark))
+			if lastEvent == nil || lastEvent.Meta.Mark != e.Meta.Mark {
+				mark = color.HiGreenString(mark)
+			}
 			ifindex := fmt.Sprintf("%d", e.Meta.Ifindex)
 			fn := addr2Name.Addr2NameMap[e.Addr].Name()
-
-			/*padr := func(s string, nesting int) string {
-				nestOff := nesting * 2
-				return strings.Repeat(" ", maxLen-(38+len(s))-nestOff)
-			}*/
 
 			portStr := func(n uint16) string {
 				return strconv.Itoa(int(byteorder.NetworkToHost16(n)))
@@ -153,7 +76,7 @@ func App(addr2Name pwru.Addr2Name) (*tview.Application, *tview.TreeNode) {
 			w := 70
 			txt := draw.Header(w) + "\n"
 			txt += draw.Line(w, " SKB:") + "\n"
-			// todo line break
+			txt += draw.Break(w) + "\n"
 			txt += draw.Line(w, " skb_addr:"+skbAddr) + "\n"
 			txt += draw.Line(w, " mark:"+mark) + "\n"
 			for _, mask := range masks {
@@ -163,9 +86,31 @@ func App(addr2Name pwru.Addr2Name) (*tview.Application, *tview.TreeNode) {
 			txt += draw.Line(w, " func_name:"+fn) + "\n"
 			txt += draw.Line(w, " saddr:"+saddr) + "\n"
 			txt += draw.Line(w, " daddr:"+daddr) + "\n"
+
+			saddr = addrToStr(e.TunnelTuple.L3Proto, e.TunnelTuple.Saddr) + ":" + portStr(e.TunnelTuple.Sport)
+			daddr = addrToStr(e.TunnelTuple.L3Proto, e.TunnelTuple.Daddr) + ":" + portStr(e.TunnelTuple.Dport)
+			txt += draw.Line(w, " "+draw.Header(w-4)) + "\n"
+
+			mark = fmt.Sprintf("0x%08x", e.Meta.Mark)
+			masks = decodeMark(uint16(e.Meta.Mark))
+			if lastEvent == nil || lastEvent.Meta.Mark != e.Meta.Mark {
+				mark = color.HiGreenString(mark)
+			}
+
+			txt += draw.Line(w, " "+draw.Line(w-4, "TUNNEL:")) + "\n"
+			txt += draw.Line(w, " "+draw.Break(w-4)) + "\n"
+			txt += draw.Line(w, " "+draw.Line(w-4, "saddr: "+saddr)) + "\n"
+			txt += draw.Line(w, " "+draw.Line(w-4, "daddr: "+daddr)) + "\n"
+			txt += draw.Line(w, " "+draw.Line(w-4, "mark: "+mark)) + "\n"
+			for _, mask := range masks {
+				txt += draw.Line(w, " "+draw.Line(w-4, " * "+mask)) + "\n"
+			}
+			txt += draw.Line(w, " "+draw.Footer(w-4)) + "\n"
+
 			txt += draw.Footer(w)
 
 			pktView.SetText(txt)
+			lastEvent = e
 		}
 	})
 	tree.SetSelectedFunc(func(node *tview.TreeNode) {
@@ -183,7 +128,7 @@ func App(addr2Name pwru.Addr2Name) (*tview.Application, *tview.TreeNode) {
 
 	// 2,3
 	flex := tview.NewFlex().
-		AddItem(tree, 70, 2, true).
+		AddItem(tree, 100, 2, true).
 		AddItem(pktView, 0, 3, false)
 
 	return app.SetRoot(flex, true).SetFocus(flex), root
@@ -243,14 +188,149 @@ func revTuple(tpl pwru.Tuple) pwru.Tuple {
 	return out
 }
 
+// Grouping, function(e) -> hash
+//
+// * TunnelTuple
+//   - SKB Addr
+//
+// So it's a list of functions:
+//
+// [groupByTunnel, groupByMark, ...]
+
+type GroupFn func(e *pwru.Event) string
+
+// Ok, more efficient, this is a common prefix tree:
+//
+// tunnel-id.foo-id.mark
+//
+//
+// --group-by="tunnel.mark"
+
+func InsertGroup(root *tview.TreeNode, e *pwru.Event, addr2Name pwru.Addr2Name, groupFns []GroupFn) {
+	insertGroup(root, e, addr2Name, append(groupFns, func(e *pwru.Event) string {
+		return "[trace] " + addr2Name.Addr2NameMap[e.Addr].Name()
+	}))
+}
+
+func insertGroup(curr *tview.TreeNode, e *pwru.Event, addr2Name pwru.Addr2Name, groupFns []GroupFn) {
+	if len(groupFns) == 0 {
+		return
+	}
+
+	gfn := groupFns[0]
+	id := gfn(e)
+	if len(groupFns) == 1 {
+		// child fn -> always add without grouping.
+		leaf := tview.NewTreeNode(id)
+		leaf.SetColor(tcell.ColorPink)
+		// leaf.SetReference(id)
+		leaf.SetReference(e)
+		leaf.SetExpanded(false)
+		curr.AddChild(leaf)
+		return
+	} else {
+		groupFns = groupFns[1:len(groupFns)]
+	}
+
+	var target *tview.TreeNode
+
+	for _, grpNode := range curr.GetChildren() {
+		obj := grpNode.GetReference()
+		if obj == nil {
+			continue
+		}
+		gn, ok := obj.(string)
+		if !ok {
+			continue
+		}
+
+		if gn == id {
+			target = grpNode
+			break
+		}
+	}
+	if target == nil {
+		target = tview.NewTreeNode(id)
+		target.SetColor(tcell.ColorGreen)
+		target.SetReference(id)
+		target.SetExpanded(false)
+		curr.AddChild(target)
+	}
+
+	insertGroup(target, e, addr2Name, groupFns)
+}
+
+var groupFnLookup = map[string]GroupFn{
+	"tunnel-ip-version": groupByIPversion(true),
+	"ip-version":        groupByIPversion(false),
+	"tuple":             GroupByTupleConnection(false),
+	"tunnel-tuple":      GroupByTupleConnection(true),
+	"mark": func(e *pwru.Event) string {
+		return fmt.Sprintf("0x%08x", e.Meta.Mark)
+	},
+}
+
+func ParseGroupingString(fnNames []string) ([]GroupFn, error) {
+	out := []GroupFn{}
+	for _, fname := range fnNames {
+		fn, ok := groupFnLookup[fname]
+		if !ok {
+			return nil, fmt.Errorf("no such fn %s", fname)
+		}
+		out = append(out, func(e *pwru.Event) string {
+			return fmt.Sprintf("[%s] %s", fname, fn(e))
+		})
+	}
+	return out, nil
+}
+
+func groupByIPversion(tunnel bool) GroupFn {
+	return func(e *pwru.Event) string {
+		tuple := e.Tuple
+		if tunnel {
+			tuple = e.TunnelTuple
+		}
+		switch tuple.L3Proto {
+		case syscall.ETH_P_IP:
+			return "ipv4"
+		case syscall.ETH_P_IPV6:
+			return "ipv6"
+		default:
+			return "unknown"
+		}
+	}
+}
+
+func GroupByTupleConnection(tunnel bool) GroupFn {
+	return func(e *pwru.Event) string {
+		tuple := e.Tuple
+		if tunnel {
+			tuple = e.TunnelTuple
+		}
+
+		if tuple.Sport < tuple.Dport {
+			tuple = revTuple(tuple)
+		}
+
+		return pwru.GetTuple(tuple, false)
+	}
+}
+
 // Proposal: Fold operation, for a node holding a event ptr, we can fold that by any thing in there
 // For example. Event{}.FoldBySource(1234), FoldByTimeChunk(5*time.Minute).
-func Insert(root *tview.TreeNode, e *pwru.Event, addr2Name pwru.Addr2Name) {
+func Insert(root *tview.TreeNode, e *pwru.Event, addr2Name pwru.Addr2Name, groupByTunnel bool) {
+	tuple := func(ev *pwru.Event) pwru.Tuple {
+		if groupByTunnel {
+			return ev.TunnelTuple
+		}
+		return ev.Tuple
+	}
+
 	tuplePairs := root.GetChildren()
 	var pairRef *pwru.Event
 	// Pair node folds on 4-tuple (todo: make this for both directions).
 	var pairNode *tview.TreeNode
-	dir := "→"
+	dir := "[→] "
 	for _, tpn := range tuplePairs {
 		obj := tpn.GetReference()
 		if obj == nil {
@@ -267,10 +347,10 @@ func Insert(root *tview.TreeNode, e *pwru.Event, addr2Name pwru.Addr2Name) {
 				bytes.Compare(a.Daddr[:4], b.Daddr[:4]) == 0 &&
 				a.Sport == b.Sport && a.Dport == b.Dport
 		}
-		eq := equals(tp.Tuple, e.Tuple)
-		revEq := equals(revTuple(tp.Tuple), e.Tuple)
+		eq := equals(tuple(tp), tuple(e))
+		revEq := equals(revTuple(tuple(tp)), tuple(e))
 		if revEq {
-			dir = "←"
+			dir = "[←] "
 		}
 		if eq || revEq {
 			pairRef = tp
@@ -280,16 +360,15 @@ func Insert(root *tview.TreeNode, e *pwru.Event, addr2Name pwru.Addr2Name) {
 	}
 	// If no such tuple pair, add one.
 	if pairRef == nil {
-		pairNode = tview.NewTreeNode(pwru.GetTupleData(e, true))
+		pairNode = tview.NewTreeNode(pwru.GetTuple(tuple(e), true))
 		pairNode.SetColor(tcell.ColorGreen)
 		pairNode.SetReference(e)
 		pairNode.SetExpanded(false)
 		root.AddChild(pairNode)
 	}
 
-	ts := time.Now().Format(time.StampNano)
 	fn := addr2Name.Addr2NameMap[e.Addr].Name()
-	flowNode := tview.NewTreeNode(fmt.Sprintf(dir+"%s %s", fn, ts)).SetColor(tcell.ColorPink)
+	flowNode := tview.NewTreeNode(fmt.Sprintf(dir+"%s", fn)).SetColor(tcell.ColorPink)
 	flowNode.SetReference(e)
 
 	pairNode.AddChild(flowNode)

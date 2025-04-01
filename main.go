@@ -314,6 +314,20 @@ func main() {
 	}()
 	events := coll.Maps["events"]
 	runForever := flags.OutputLimitLines == 0
+
+	/*"tunnel-ip-version": groupByIPversion(true),
+	"ip-version":        groupByIPversion(false),
+	"tuple":             GroupByTupleConnection(false),
+	"tunnel-tuple":      GroupByTupleConnection(true),
+	"mark": func(e *pwru.Event) string {
+		return fmt.Sprintf("0x%08x", e.Meta.Mark)
+	},*/
+
+	groupings, err := tui.ParseGroupingString([]string{"tunnel-tuple", "tunnel-ip-version"})
+	if err != nil {
+		panic(err)
+	}
+
 	for i := flags.OutputLimitLines; i > 0 || runForever; i-- {
 		var event pwru.Event
 		for {
@@ -328,7 +342,7 @@ func main() {
 			}
 		}
 
-		tui.Insert(root, &event, addr2name)
+		tui.InsertGroup(root, &event, addr2name, groupings)
 		app.Draw()
 		/*if flags.OutputJson {
 			output.PrintJson(&event)
