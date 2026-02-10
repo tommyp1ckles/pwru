@@ -22,6 +22,7 @@ import (
 
 	"github.com/cilium/pwru/internal/libpcap"
 	"github.com/cilium/pwru/internal/pwru"
+	"github.com/cilium/pwru/gobpf"
 )
 
 func main() {
@@ -126,7 +127,7 @@ func run(flags pwru.Flags) error {
 		return fmt.Errorf("Failed to get function addrs: %w", err)
 	}
 
-	bpfSpec, err := LoadKProbePWRU()
+	bpfSpec, err := gobpf.LoadKProbePWRU()
 	if err != nil {
 		return fmt.Errorf("Failed to load bpf spec: %w", err)
 	}
