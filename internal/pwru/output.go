@@ -30,6 +30,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/cilium/pwru/internal/byteorder"
+	"github.com/cilium/pwru/pkg/models"
 )
 
 const absoluteTS string = "2006-01-02T15:04:05.000"
@@ -64,36 +65,6 @@ type output struct {
 	procCache      map[int]string
 }
 
-// outputStructured is a struct to hold the data for the json output
-type jsonPrinter struct {
-	Skb         string     `json:"skb,omitempty"`
-	Shinfo      string     `json:"skb_shared_info,omitempty"`
-	Cpu         uint32     `json:"cpu,omitempty"`
-	Process     string     `json:"process,omitempty"`
-	Func        string     `json:"func,omitempty"`
-	CallerFunc  string     `json:"caller_func,omitempty"`
-	Time        any        `json:"time,omitempty"`
-	Netns       uint32     `json:"netns,omitempty"`
-	Mark        uint32     `json:"mark,omitempty"`
-	Iface       string     `json:"iface,omitempty"`
-	Proto       uint16     `json:"proto,omitempty"`
-	Mtu         uint32     `json:"mtu,omitempty"`
-	Len         uint32     `json:"len,omitempty"`
-	Cb          [5]uint32  `json:"cb,omitempty"`
-	Tuple       *jsonTuple `json:"tuple,omitempty"`
-	TunnelTuple *jsonTuple `json:"tunnel_tuple,omitempty"`
-	Stack       any        `json:"stack,omitempty"`
-	SkbMetadata any        `json:"skb_metadata,omitempty"`
-}
-
-type jsonTuple struct {
-	Saddr string `json:"saddr,omitempty"`
-	Daddr string `json:"daddr,omitempty"`
-	Sport uint16 `json:"sport,omitempty"`
-	Dport uint16 `json:"dport,omitempty"`
-	Proto uint8  `json:"proto,omitempty"`
-	Flags string `json:"flags,omitempty"`
-}
 
 func centerAlignString(s string, width int) string {
 	if len(s) >= width {
@@ -194,12 +165,10 @@ func (o *output) PrintHeader() {
 
 // PrintJson prints the event in JSON format
 func (o *output) PrintJson(event *Event) error {
-	// crate an instance of the outputStructured struct to hold the data
-	d := &jsonPrinter{}
+	d := &models.Event{}
 
-	// add the data to the struct
 	d.Skb = fmt.Sprintf("%#x", event.SkbAddr)
-	d.Cpu = event.CPU
+	d.CPU = event.CPU
 	d.Process = o.getExecName(int(event.PID))
 	d.Func = getOutFuncName(o, event, event.Addr)
 	if o.flags.OutputCaller {
@@ -208,7 +177,6 @@ func (o *output) PrintJson(event *Event) error {
 
 	o.lastSeenSkb[event.SkbAddr] = event.Timestamp
 
-	// add the timestamp to the struct if it is not set to none
 	if o.flags.OutputTS != "none" {
 		switch o.flags.OutputTS {
 		case "absolute":
@@ -225,32 +193,29 @@ func (o *output) PrintJson(event *Event) error {
 		d.Mark = event.Meta.Mark
 		d.Iface = o.getIfaceName(event.Meta.Netns, event.Meta.Ifindex)
 		d.Proto = byteorder.NetworkToHost16(event.Meta.Proto)
-		d.Mtu = event.Meta.MTU
+		d.MTU = event.Meta.MTU
 		d.Len = event.Meta.Len
 		if o.flags.FilterTraceTc || o.flags.OutputSkbCB {
-			d.Cb = event.Meta.Cb
+			d.CB = event.Meta.Cb
 		}
 	}
 
 	if o.flags.OutputTuple {
-		t := &jsonTuple{}
-		t.Saddr = addrToStr(event.Tuple.L3Proto, event.Tuple.Saddr)
-		t.Daddr = addrToStr(event.Tuple.L3Proto, event.Tuple.Daddr)
-		t.Sport = byteorder.NetworkToHost16(event.Tuple.Sport)
-		t.Dport = byteorder.NetworkToHost16(event.Tuple.Dport)
-		t.Proto = event.Tuple.L4Proto
-		t.Flags = event.Tuple.TCPFlag.String()
-		d.Tuple = t
-	}
-
-	if o.flags.OutputTuple {
-		t := &jsonTuple{}
-		t.Saddr = addrToStr(event.TunnelTuple.L3Proto, event.TunnelTuple.Saddr)
-		t.Daddr = addrToStr(event.TunnelTuple.L3Proto, event.TunnelTuple.Daddr)
-		t.Sport = byteorder.NetworkToHost16(event.TunnelTuple.Sport)
-		t.Dport = byteorder.NetworkToHost16(event.TunnelTuple.Dport)
-		t.Proto = event.TunnelTuple.L4Proto
-		d.TunnelTuple = t
+		d.Tuple = &models.Tuple{
+			Saddr: addrToStr(event.Tuple.L3Proto, event.Tuple.Saddr),
+			Daddr: addrToStr(event.Tuple.L3Proto, event.Tuple.Daddr),
+			Sport: byteorder.NetworkToHost16(event.Tuple.Sport),
+			Dport: byteorder.NetworkToHost16(event.Tuple.Dport),
+			Proto: event.Tuple.L4Proto,
+			Flags: event.Tuple.TCPFlag.String(),
+		}
+		d.TunnelTuple = &models.Tuple{
+			Saddr: addrToStr(event.TunnelTuple.L3Proto, event.TunnelTuple.Saddr),
+			Daddr: addrToStr(event.TunnelTuple.L3Proto, event.TunnelTuple.Daddr),
+			Sport: byteorder.NetworkToHost16(event.TunnelTuple.Sport),
+			Dport: byteorder.NetworkToHost16(event.TunnelTuple.Dport),
+			Proto: event.TunnelTuple.L4Proto,
+		}
 	}
 
 	if o.flags.OutputStack && event.PrintStackId > 0 {
