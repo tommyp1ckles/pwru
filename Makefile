@@ -27,6 +27,11 @@ pwru: libpcap/libpcap.a
 		-ldflags "-w -s \
 		-X 'github.com/cilium/pwru/internal/pwru.Version=${VERSION}'"
 
+pwru-traceviewer:
+	$(GO_BUILD) $(if $(GO_TAGS),-tags $(GO_TAGS)) \
+		-ldflags "-w -s \
+		-X 'github.com/cilium/pwru/internal/pwru.Version=${VERSION}'" -o pwru-traceviewer ./traceviewer/
+
 ## Build libpcap for static linking
 libpcap/libpcap.a:
 	cd libpcap && \
