@@ -11,6 +11,7 @@ require (
 	github.com/jsimonetti/rtnetlink/v2 v2.2.0
 	github.com/leonhwangprojects/bice v0.1.3
 	github.com/spf13/pflag v1.0.10
+	github.com/stretchr/testify v1.11.1
 	github.com/tklauser/ps v0.0.4
 	github.com/vishvananda/netns v0.0.5
 	golang.org/x/arch v0.28.0
@@ -21,6 +22,7 @@ require (
 
 require (
 	github.com/VividCortex/ewma v1.2.0 // indirect
+	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/fatih/color v1.18.0 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
@@ -29,7 +31,9 @@ require (
 	github.com/mdlayher/netlink v1.8.0 // indirect
 	github.com/mdlayher/socket v0.5.1 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
+	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 	rsc.io/c2go v0.0.0-20170620140410-520c22818a08 // indirect
 )
 
