@@ -13,6 +13,10 @@ type TreeView struct {
 	end      int
 
 	root *node
+
+	buf          string
+	arrowIndices []int
+	dirty        bool
 }
 
 // NewTreeView creates a new tree view with no nodes.
@@ -22,7 +26,12 @@ func NewTreeView() *TreeView {
 		root:   newNode(),
 		start:  0,
 		end:    10,
+		dirty:  true, // always draw first time.
 	}
+}
+
+func (tv *TreeView) setDirty() {
+	tv.dirty = true
 }
 
 // traversePreOrderRange returns nodes in pre-order traversal within the specified [start, end) index range.
@@ -38,21 +47,29 @@ func (tv *TreeView) traversePreOrderRange(start, end int) []traversalNode {
 
 // Upsert ensures the root exists and inserts or updates a path starting from the root.
 func (tv *TreeView) Upsert(e *Event, collapse bool, index func(depth int) (string, bool)) {
+	tv.setDirty()
 	if tv.root == nil {
 		tv.root = &node{str: "root", size: 1}
 	}
 	tv.root.upsert(e, collapse, index, 0)
 }
 
+const tabWidth = 2
+
 func (t *TreeView) View() string {
+	if !t.dirty {
+		return t.buf
+	}
+
 	b := &strings.Builder{}
+	t.arrowIndices = []int{}
 
 	// We skip the root node when drawing.
 	window := t.traversePreOrderRange(t.start+1, t.end+1)
 
 	// Handle empty tree case
 	if len(window) == 0 {
-		b.WriteString("(empty tree)\n")
+		b.WriteString("[empty tree]\n")
 		return b.String()
 	}
 
@@ -62,7 +79,7 @@ func (t *TreeView) View() string {
 	// Draw each node in the window
 	for i, tn := range window {
 		// Indentation based on depth
-		pre := strings.Repeat("  ", int(tn.depth))
+		pre := strings.Repeat(" ", tabWidth*int(tn.depth))
 
 		// Determine expander arrow
 		expandIndicator := "  " // two spaces for leaf nodes (no children)
@@ -72,6 +89,10 @@ func (t *TreeView) View() string {
 			} else {
 				expandIndicator = "▼ "
 			}
+
+			t.arrowIndices = append(t.arrowIndices, len(pre))
+		} else {
+			t.arrowIndices = append(t.arrowIndices, -1)
 		}
 
 		checkbox := "☐"
@@ -83,7 +104,8 @@ func (t *TreeView) View() string {
 		b.WriteString(pre + expandIndicator + checkbox + " " + tn.n.str + "\n")
 	}
 
-	return b.String()
+	t.buf = b.String()
+	return t.buf
 }
 
 func (tv *TreeView) GetSelectedLeafSize() int {
@@ -98,6 +120,7 @@ func (tv *TreeView) GetRootRealSize() int {
 }
 
 func (tv *TreeView) SortSelected() {
+	tv.setDirty()
 	if tv.selected == nil {
 		return
 	}
@@ -113,6 +136,7 @@ func (tv *TreeView) GetSelected() *PktView {
 
 // ActionUp moves and possibly scrolls the cursor and viewport up.
 func (tv *TreeView) ActionUp() {
+	tv.setDirty()
 	if tv.cursor > 0 {
 		tv.cursor--
 		if tv.cursor < tv.start {
@@ -124,6 +148,7 @@ func (tv *TreeView) ActionUp() {
 
 // ActionDown moves and possibly scrolls the cursor and viewport down.
 func (tv *TreeView) ActionDown() {
+	tv.setDirty()
 	if tv.cursor < tv.root.size-2 {
 		tv.cursor++
 		if tv.cursor >= tv.end {
@@ -135,12 +160,14 @@ func (tv *TreeView) ActionDown() {
 
 // SetCursor overrides the current cursor position.
 func (tv *TreeView) SetCursor(c int) {
+	tv.setDirty()
 	tv.cursor = c
 }
 
 // ToggleCollapsedSelected toggles the current selected nodes
 // collapsed state.
 func (tv *TreeView) ToggleCollapsedSelected() {
+	tv.setDirty()
 	if tv.selected == nil {
 		return
 	}
@@ -148,5 +175,21 @@ func (tv *TreeView) ToggleCollapsedSelected() {
 }
 
 func (tv *TreeView) SetEnd(h int) {
+	tv.setDirty()
+	tv.dirty = true
 	tv.end = h
+}
+
+func (tv *TreeView) GetStart() int {
+	return tv.start
+}
+
+func (tv *TreeView) ColIsArrow(col, row int) bool {
+	if row < 0 || row >= len(tv.arrowIndices) {
+		return false
+	}
+	if tv.arrowIndices[row] < 0 {
+		return false
+	}
+	return tv.arrowIndices[row] == col
 }
