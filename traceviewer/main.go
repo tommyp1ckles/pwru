@@ -38,6 +38,8 @@ type model struct {
 
 	foldStack []foldFn
 	collapse  bool
+
+	enableMouseControls bool
 }
 
 func (m *model) Init() tea.Cmd {
@@ -53,10 +55,19 @@ type tickEvent struct{}
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.MouseMsg:
-		switch msg.Action {
-		case tea.MouseAction(tea.MouseButtonWheelUp):
+		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+			if msg.X < m.width/2 {
+				m.tv.SetCursor(m.tv.GetStart() + msg.Y)
+				m.tv.View()
+				if m.tv.ColIsArrow(msg.X, msg.Y) {
+					m.tv.ToggleCollapsedSelected()
+				}
+			}
+		}
+		switch msg.Button {
+		case tea.MouseButtonWheelUp:
 			m.tv.ActionUp()
-		case tea.MouseAction(tea.MouseButtonWheelDown):
+		case tea.MouseButtonWheelDown:
 			m.tv.ActionDown()
 		}
 	case tea.KeyMsg:
@@ -262,6 +273,7 @@ func folderFn(e *Event, fns []foldFn) func(int) (string, bool) {
 func main() {
 	folds := flag.String("folds", "tuple.skb", "a string description for folds")
 	collapse := flag.Bool("collapse", false, "will collapse folds by default")
+	enableMouse := flag.Bool("mouse", false, "enables using mouse input")
 	flag.Parse()
 
 	fns := []foldFn{}
@@ -277,10 +289,11 @@ func main() {
 	tv := tree.NewTreeView()
 
 	m := &model{
-		mu:        &sync.Mutex{},
-		tv:        tv,
-		foldStack: fns,
-		collapse:  *collapse,
+		mu:                  &sync.Mutex{},
+		tv:                  tv,
+		foldStack:           fns,
+		collapse:            *collapse,
+		enableMouseControls: *enableMouse,
 	}
 
 	p := tea.NewProgram(
