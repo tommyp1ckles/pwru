@@ -27,10 +27,10 @@ pwru: libpcap/libpcap.a
 		-ldflags "-w -s \
 		-X 'github.com/cilium/pwru/internal/pwru.Version=${VERSION}'"
 
-pwru-traceviewer:
-	$(GO_BUILD) $(if $(GO_TAGS),-tags $(GO_TAGS)) \
+traceviewer:
+	CGO_ENABLED=0 GOARCH=$(TARGET_GOARCH) $(GO) build $(if $(GO_TAGS),-tags $(GO_TAGS)) \
 		-ldflags "-w -s \
-		-X 'github.com/cilium/pwru/internal/pwru.Version=${VERSION}'" -o pwru-traceviewer ./traceviewer/
+		-X 'github.com/cilium/pwru/internal/pwru.Version=${VERSION}'" -o ./traceviewer/traceviewer ./traceviewer/
 
 ## Build libpcap for static linking
 libpcap/libpcap.a:
@@ -43,6 +43,7 @@ release:
 	docker run \
 		--rm \
 		--workdir /pwru \
+		--platform linux/$(TARGET_GOARCH) \
 		--volume `pwd`:/pwru docker.io/library/golang:$(GO_IMAGE_VERSION)@$(GO_IMAGE_SHA) \
 		sh -c "apt update && apt install -y make git clang-19 llvm curl gcc flex bison gcc-aarch64* libc6-dev-arm64-cross gcc-riscv64* libc6-dev-riscv64-cross && \
 			ln -s /usr/bin/clang-19 /usr/bin/clang && \
@@ -96,4 +97,4 @@ help:
 	} \
 	{ lastLine = $$0 }' $(MAKEFILE_LIST)
 
-.PHONY: $(TARGET) release local-release install clean test
+.PHONY: $(TARGET) traceviewer release local-release install clean test

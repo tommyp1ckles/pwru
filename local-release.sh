@@ -18,10 +18,13 @@ for ARCH in ${ARCHS}; do
 
     make clean
     echo "Building release binary for ${OS}/${ARCH}..."
-    make pwru TARGET_GOARCH=${ARCH} LIBPCAP_ARCH=${LIBPCAP_ARCH} CC=${CC} 
+    make pwru TARGET_GOARCH=${ARCH} LIBPCAP_ARCH=${LIBPCAP_ARCH} CC=${CC}
+    make traceviewer TARGET_GOARCH=${ARCH}
 
     test -d release/${OS}/${ARCH} || mkdir -p release/${OS}/${ARCH}
     tar -czf release/pwru-${OS}-${ARCH}.tar.gz pwru
     (cd release && sha256sum pwru-${OS}-${ARCH}.tar.gz > pwru-${OS}-${ARCH}.tar.gz.sha256sum)
+    tar -czf release/pwru-traceviewer-${OS}-${ARCH}.tar.gz traceviewer
+    (cd release && sha256sum pwru-traceviewer-${OS}-${ARCH}.tar.gz > pwru-traceviewer-${OS}-${ARCH}.tar.gz.sha256sum)
     rm -r release/${OS}
 done
